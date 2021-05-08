@@ -8,12 +8,14 @@ from flask_jwt_extended import create_refresh_token
 from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import get_jwt
 from flask_jwt_extended import jwt_required
+from flask_jwt_extended import verify_jwt_in_request
 from flask_jwt_extended import current_user
 from flask_jwt_extended import JWTManager
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 from dotenv import load_dotenv
+from functools import wraps
 import os
 
 app = Flask(__name__)
@@ -25,7 +27,7 @@ database = os.environ.get('DATABASE')
 app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://postgres:{database_password}@{host}/{database}"
 db = SQLAlchemy(app)
 app.config["JWT_SECRET_KEY"] = "TOKEN_KEY"
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=30)
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=30)
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
 
@@ -33,10 +35,11 @@ jwt = JWTManager(app)
 class User(db.Model):
     user_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), nullable=False)
-    password = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(255), unique=True, nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     firstname = db.Column(db.String(50), nullable=False)
     lastname = db.Column(db.String(50), nullable=False)
+    role = db.Column(db.String(255))
 
 
 class RevokedToken(db.Model):
@@ -47,35 +50,6 @@ class RevokedToken(db.Model):
 
 
 db.create_all()
-
-
-def password_hashing(pwd):
-    password = generate_password_hash(pwd)
-    return password
-
-
-def password_verify(password, pwd):
-    return check_password_hash(password, pwd)
-
-
-def is_check_none_space_length(pwd):
-    return pwd is not None and ' ' not in pwd and 8 <= len(pwd) <= 16
-
-
-def is_check_char(pwd):
-    str_func = [str.isalpha, str.islower, str.isupper]
-    result = []
-    for item in str_func:
-        if any(item(char) for char in pwd):
-            result.append(True)
-        else:
-            result.append(False)
-    return all(result)
-
-
-def is_check_special_char(pwd):
-    special_char = ['*', '.', '@', '!']
-    return any(char for char in pwd if char in special_char)
 
 
 class UserInfo(Resource):
@@ -92,7 +66,7 @@ class UserInfo(Resource):
             data_user['lastname'] = user.lastname
             results.append(data_user)
 
-        return jsonify({'users': results})
+        return {'users': results}
 
     def post(self):
         first_name = request.json.get('firstname').strip()
@@ -124,6 +98,20 @@ class UserInfo(Resource):
         return make_response({'error': '400 Bad Request', 'message': 'Enter a valid Password'})
 
 
+def admin_required(func):
+    @wraps(func)
+    def is_check_admin(*args, **kwargs):
+        verify_jwt_in_request()
+        claim = get_jwt()
+        try:
+            if claim['is_administrator']:
+                return func(*args, **kwargs)
+        except KeyError:
+            return make_response(
+                {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '})
+    return is_check_admin
+
+
 class UserOperation(Resource):
     @jwt_required(fresh=True)
     def get(self, id):
@@ -136,9 +124,9 @@ class UserOperation(Resource):
         data_user['email'] = user.email
         data_user['firstname'] = user.firstname
         data_user['lastname'] = user.lastname
-        return jsonify({'user': data_user})
+        return {'user': data_user}
 
-    @jwt_required(fresh=True)
+    @admin_required
     def delete(self, id):
         user = User.query.get(id)
         if user is None:
@@ -179,7 +167,8 @@ class ChangePassword(Resource):
         old_password = data['old_password']
         if password_verify(user.password, old_password):
             new_password = data['new_password']
-            if is_check_none_space_length(new_password) and is_check_char(new_password) and is_check_special_char(new_password):
+            if is_check_none_space_length(new_password) and is_check_char(new_password) and is_check_special_char(
+                    new_password):
                 user.password = password_hashing(new_password)
                 db.session.commit()
                 return {'password': data['new_password']}
@@ -188,35 +177,26 @@ class ChangePassword(Resource):
 
 
 class Login(Resource):
-    def get(self):
+    def post(self):
         username = request.json['username']
         password = request.json['password']
         user = User.query.filter_by(username=username).first()
         if not user:
-            return make_response({'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'})
+            return make_response(
+                {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'})
         if password_verify(user.password, password):
-            token = create_access_token(identity=user.email, fresh=True)
-            refresh_token = create_refresh_token(identity=user.email)
-            return jsonify(token=token, refresh_token=refresh_token)
+            if user.role == 'admin':
+                token = create_access_token(identity=user.email, fresh=True,
+                                            additional_claims={'is_administrator': True})
+                refresh_token = create_refresh_token(identity=user.email)
+                return jsonify(token=token, refresh_token=refresh_token)
+
+            else:
+                token = create_access_token(identity=user.email, fresh=True)
+                refresh_token = create_refresh_token(identity=user.email)
+                return jsonify(token=token, refresh_token=refresh_token)
+
         return make_response({'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'})
-
-
-@jwt.user_lookup_loader
-def user_lookup_callback(_jwt_header, jwt_data):
-    identity = jwt_data["sub"]
-    return User.query.filter_by(email=identity).first()
-
-
-@jwt.expired_token_loader
-def revoked_token_callback(_jwt_header, _jwt_payload):
-    return make_response({'error': '401,unauthorized user', 'message': 'this token has been expired'})
-
-
-@jwt.token_in_blocklist_loader
-def check_if_token_revoked(_jwt_header, jwt_payload):
-    jti = jwt_payload['jti']
-    token = db.session.query(RevokedToken.id).filter_by(jti=jti).scalar()
-    return token is not None
 
 
 class Identity(Resource):
@@ -248,6 +228,53 @@ class Logout(Resource):
         db.session.add(revoked_token)
         db.session.commit()
         return {'deleted': jti}
+
+
+def password_hashing(pwd):
+    password = generate_password_hash(pwd)
+    return password
+
+
+def password_verify(password, pwd):
+    return check_password_hash(password, pwd)
+
+
+def is_check_none_space_length(pwd):
+    return pwd is not None and ' ' not in pwd and 8 <= len(pwd) <= 16
+
+
+def is_check_char(pwd):
+    str_func = [str.isalpha, str.islower, str.isupper]
+    result = []
+    for item in str_func:
+        if any(item(char) for char in pwd):
+            result.append(True)
+        else:
+            result.append(False)
+    return all(result)
+
+
+def is_check_special_char(pwd):
+    special_char = ['*', '.', '@', '!']
+    return any(char for char in pwd if char in special_char)
+
+
+@jwt.user_lookup_loader
+def user_lookup_callback(_jwt_header, jwt_data):
+    identity = jwt_data["sub"]
+    return User.query.filter_by(email=identity).first()
+
+
+@jwt.expired_token_loader
+def revoked_token_callback(_jwt_header, _jwt_payload):
+    return make_response({'error': '401,unauthorized user', 'message': 'this token has been expired'})
+
+
+@jwt.token_in_blocklist_loader
+def check_if_token_revoked(_jwt_header, jwt_payload):
+    jti = jwt_payload['jti']
+    token = db.session.query(RevokedToken.id).filter_by(jti=jti).scalar()
+    return token is not None
 
 
 api.add_resource(UserInfo, '/user')
