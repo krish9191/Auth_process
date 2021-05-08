@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from flask_restful import Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash
@@ -24,12 +24,14 @@ load_dotenv(".env")
 database_password = os.environ.get('PASSWORD')
 host = os.environ.get('HOST')
 database = os.environ.get('DATABASE')
+SECRET_KEY = os.environ.get("TOKEN_KEY")
 app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://postgres:{database_password}@{host}/{database}"
 db = SQLAlchemy(app)
-app.config["JWT_SECRET_KEY"] = "TOKEN_KEY"
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=30)
+app.config["JWT_SECRET_KEY"] = SECRET_KEY
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=3)
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
+print(app.config)
 
 
 class User(db.Model):
@@ -39,7 +41,7 @@ class User(db.Model):
     email = db.Column(db.String(150), unique=True, nullable=False)
     firstname = db.Column(db.String(50), nullable=False)
     lastname = db.Column(db.String(50), nullable=False)
-    role = db.Column(db.String(255))
+    role = db.Column(db.String(255), default=None)
 
 
 class RevokedToken(db.Model):
@@ -69,22 +71,44 @@ class UserInfo(Resource):
         return {'users': results}
 
     def post(self):
-        first_name = request.json.get('firstname').strip()
-        if first_name == '':
-            return make_response({'error': '400 Bad Request', 'message': 'enter valid Firstname'})
-        last_name = request.json.get('lastname').strip()
-        if last_name == '':
-            return make_response({'error': '400 Bad Request', 'message': 'enter valid Lastname'})
-        email = request.json.get('email').strip()
-        if email == '':
-            return make_response({'error': '400 Bad Request', 'message': 'enter valid Email'})
-        user_name = request.json.get('username').strip()
-        if user_name == '':
-            return make_response({'error': '400 Bad Request', 'message': 'enter valid Username'})
+        if request.json == {}:
+            return {'message': 'it is required to enter all the fields', 'error': 400}, 400
+
+        first_name = request.json.get('firstname')
+        if first_name is None or first_name == '':
+            return {'message': 'firstname is not valid', 'error': 400}, 400
+        else:
+            firstname = first_name.strip()
+
+        last_name = request.json.get('lastname')
+        if last_name is None or last_name == '':
+            return {'message': 'lastname is not valid', 'error': 400}, 400
+        else:
+            lastname = last_name.strip()
+
+        email = request.json.get('email')
+        if email is None or email == '':
+            return {'message': 'email is not valid', 'error': 400}, 400
+        else:
+            u_email = email.strip()
+
+        user_name = request.json.get('username')
+        if user_name is None or user_name == '':
+            return {'message': 'username is not valid', 'error': 400}, 400
+        else:
+            username = user_name.strip()
+
+        role = request.json.get('role')
+        if role is not None:
+            if role != 'admin' and role != 'user':
+                return {'message': 'role is not valid', 'error': 400}, 400
+
         password = request.json.get('password')
+
         if is_check_none_space_length(password) and is_check_char(password) and is_check_special_char(password):
             pwd = password_hashing(password)
-            user = User(username=user_name, password=pwd, email=email, firstname=first_name, lastname=last_name)
+            user = User(username=username, password=pwd, email=u_email, firstname=firstname, lastname=lastname,
+                        role=role)
             db.session.add(user)
             db.session.commit()
             return {'users': {
@@ -92,10 +116,11 @@ class UserInfo(Resource):
                 'password': password,
                 'firstname': first_name,
                 'lastname': last_name,
-                'email': email
+                'email': email,
+                'role': role
             }
             }
-        return make_response({'error': '400 Bad Request', 'message': 'Enter a valid Password'})
+        return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
 
 
 def admin_required(func):
@@ -106,9 +131,8 @@ def admin_required(func):
         try:
             if claim['is_administrator']:
                 return func(*args, **kwargs)
-        except KeyError:
-            return make_response(
-                {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '})
+        except KeyError as err:
+            return {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '}, 403
     return is_check_admin
 
 
@@ -117,7 +141,7 @@ class UserOperation(Resource):
     def get(self, id):
         user = User.query.get(id)
         if user is None:
-            return make_response({"error": '404 Not Found', 'message': 'please enter a valid id'})
+            return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
         data_user = dict()
         data_user['username'] = user.username
         data_user['password'] = user.password
@@ -130,7 +154,7 @@ class UserOperation(Resource):
     def delete(self, id):
         user = User.query.get(id)
         if user is None:
-            return make_response({"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'})
+            return {"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
         db.session.delete(user)
         db.session.commit()
         return {'deleted': user.user_id}
@@ -139,7 +163,7 @@ class UserOperation(Resource):
     def put(self, id):
         user = User.query.get(id)
         if user is None:
-            return make_response({"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'})
+            return {"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
         username = request.json.get('username', 'none')
         if username != 'none':
             user.username = username
@@ -154,16 +178,16 @@ class UserOperation(Resource):
             user.email = email
 
         db.session.commit()
-        return 'successfully updated',
+        return 'successfully updated'
 
 
-class ChangePassword(Resource):
+class PasswordManager(Resource):
     @jwt_required(fresh=True)
     def put(self):
         data = request.get_json()
         user = User.query.filter_by(email=data['email']).first()
         if user is None:
-            return make_response({"error": '404 Not Found', 'message': 'please enter a valid email or password'})
+            return {"error": '404 Not Found', 'message': 'please enter a valid email or password'}, 404
         old_password = data['old_password']
         if password_verify(user.password, old_password):
             new_password = data['new_password']
@@ -173,7 +197,7 @@ class ChangePassword(Resource):
                 db.session.commit()
                 return {'password': data['new_password']}
 
-        return make_response({"error": '400, bad request', 'message': 'please enter a valid new password'})
+        return {'error': '400 Bad Request', 'message': 'please enter a valid new password'}, 400
 
 
 class Login(Resource):
@@ -182,8 +206,7 @@ class Login(Resource):
         password = request.json['password']
         user = User.query.filter_by(username=username).first()
         if not user:
-            return make_response(
-                {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'})
+            return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
         if password_verify(user.password, password):
             if user.role == 'admin':
                 token = create_access_token(identity=user.email, fresh=True,
@@ -196,7 +219,7 @@ class Login(Resource):
                 refresh_token = create_refresh_token(identity=user.email)
                 return jsonify(token=token, refresh_token=refresh_token)
 
-        return make_response({'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'})
+        return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
 
 
 class Identity(Resource):
@@ -216,7 +239,7 @@ class RefreshAccessToken(Resource):
     def post(self):
         identity = get_jwt_identity()
         token = create_access_token(identity=identity, fresh=True)
-        return jsonify(token=token)
+        return {'token': token}
 
 
 class Logout(Resource):
@@ -267,7 +290,7 @@ def user_lookup_callback(_jwt_header, jwt_data):
 
 @jwt.expired_token_loader
 def revoked_token_callback(_jwt_header, _jwt_payload):
-    return make_response({'error': '401,unauthorized user', 'message': 'this token has been expired'})
+    return {'error': '403, forbidden', 'message': 'this token has been expired'}, 403
 
 
 @jwt.token_in_blocklist_loader
@@ -277,9 +300,9 @@ def check_if_token_revoked(_jwt_header, jwt_payload):
     return token is not None
 
 
-api.add_resource(UserInfo, '/user')
+api.add_resource(UserInfo, '/auth/signup')
 api.add_resource(UserOperation, '/user/<int:id>')
-api.add_resource(ChangePassword, '/user/change_password')
+api.add_resource(PasswordManager, '/user/change_password')
 api.add_resource(Login, '/login')
 api.add_resource(Identity, '/user_logged_in')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
