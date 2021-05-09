@@ -9,6 +9,7 @@ from flask_jwt_extended import get_jwt_identity
 from flask_jwt_extended import get_jwt
 from flask_jwt_extended import jwt_required
 from flask_jwt_extended import verify_jwt_in_request
+from flask_jwt_extended import decode_token
 from flask_jwt_extended import current_user
 from flask_jwt_extended import JWTManager
 from datetime import datetime
@@ -31,7 +32,6 @@ app.config["JWT_SECRET_KEY"] = SECRET_KEY
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=3)
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
-print(app.config)
 
 
 class User(db.Model):
@@ -47,7 +47,8 @@ class User(db.Model):
 class RevokedToken(db.Model):
     __tablename__ = 'revoke_jwt'
     id = db.Column(db.Integer, primary_key=True)
-    jti = db.Column(db.String, nullable=False)
+    access_jti = db.Column(db.String, unique=True, nullable=False)
+    refresh_jti = db.Column(db.String, unique=True, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False)
 
 
@@ -56,7 +57,7 @@ db.create_all()
 
 class UserInfo(Resource):
 
-    def get(self):
+    def get(self):   # List Users
         users = User.query.all()
         results = []
         for user in users:
@@ -70,7 +71,9 @@ class UserInfo(Resource):
 
         return {'users': results}
 
-    def post(self):
+    def post(self):   # user registration
+        if request.json is None:
+            return {'error': 'bad request', 'message': 'invalid input'}
         if request.json == {}:
             return {'message': 'it is required to enter all the fields', 'error': 400}, 400
 
@@ -123,7 +126,7 @@ class UserInfo(Resource):
         return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
 
 
-def admin_required(func):
+def admin_required(func):      # decorator which checks claims(type of user) in token payload
     @wraps(func)
     def is_check_admin(*args, **kwargs):
         verify_jwt_in_request()
@@ -131,14 +134,14 @@ def admin_required(func):
         try:
             if claim['is_administrator']:
                 return func(*args, **kwargs)
-        except KeyError as err:
+        except KeyError:
             return {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '}, 403
     return is_check_admin
 
 
 class UserOperation(Resource):
     @jwt_required(fresh=True)
-    def get(self, id):
+    def get(self, id):  # list user by a specified user_id
         user = User.query.get(id)
         if user is None:
             return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
@@ -150,38 +153,53 @@ class UserOperation(Resource):
         data_user['lastname'] = user.lastname
         return {'user': data_user}
 
-    @admin_required
-    def delete(self, id):
+    @admin_required   # only 'admin' type user can perform this operation
+    def delete(self, id):  # delete user using user_id
         user = User.query.get(id)
         if user is None:
-            return {"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
+            return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
         db.session.delete(user)
         db.session.commit()
         return {'deleted': user.user_id}
 
     @jwt_required(fresh=True)
-    def put(self, id):
+    def put(self, id):   # update user using user_id, can update single field or multiple field
         user = User.query.get(id)
         if user is None:
-            return {"error": '404 Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
-        username = request.json.get('username', 'none')
-        if username != 'none':
+            return {"error": 'Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
+
+        if request.json == {}:
+            return {'error': 'bad request', 'message': 'invalid input'}, 400
+
+        username = request.json.get('username', None)
+        if username is not None:
             user.username = username
-        firstname = request.json.get('firstname', 'none')
-        if firstname != 'none':
+
+        firstname = request.json.get('firstname', None)
+        if firstname is not None:
             user.firstname = firstname
-        lastname = request.json.get('lastname', 'none')
-        if lastname != 'none':
+
+        lastname = request.json.get('lastname', None)
+        if lastname is not None:
             user.lastname = lastname
-        email = request.json.get('email', 'none')
-        if email != 'none':
+
+        email = request.json.get('email', None)
+        if email is not None:
             user.email = email
 
         db.session.commit()
-        return 'successfully updated'
+
+        user_data = jsonify(
+            firstname=user.firstname,
+            lastname=user.lastname,
+            email=user.email,
+            username=user.username,
+            password=user.password
+            )
+        return user_data
 
 
-class PasswordManager(Resource):
+class PasswordManager(Resource):  # create new password verifying user email and old password
     @jwt_required(fresh=True)
     def put(self):
         data = request.get_json()
@@ -200,7 +218,7 @@ class PasswordManager(Resource):
         return {'error': '400 Bad Request', 'message': 'please enter a valid new password'}, 400
 
 
-class Login(Resource):
+class Login(Resource):  # user authentication, creation of access and refresh token
     def post(self):
         username = request.json['username']
         password = request.json['password']
@@ -222,7 +240,7 @@ class Login(Resource):
         return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
 
 
-class Identity(Resource):
+class UserIdentity(Resource):  # give information of current user(logged in user)
 
     @jwt_required(fresh=True)
     def get(self):
@@ -234,23 +252,35 @@ class Identity(Resource):
         )
 
 
-class RefreshAccessToken(Resource):
+class RefreshAccessToken(Resource):  # refresh access token if refresh token is not expired
     @jwt_required(refresh=True)
     def post(self):
+        jti = get_jwt()['jti']
+        if db.session.query(RevokedToken.id).filter_by(refresh_jti=jti):
+            return {'msg': 'refresh token is expired'}, 404
         identity = get_jwt_identity()
         token = create_access_token(identity=identity, fresh=True)
         return {'token': token}
 
 
-class Logout(Resource):
+class Logout(Resource):  # user logout
     @jwt_required()
-    def delete(self):
-        jti = get_jwt()['jti']
-        deleted_at = datetime.now(timezone.utc)
-        revoked_token = RevokedToken(jti=jti, created_at=deleted_at)
+    def post(self):
+        refresh_token = request.json.get('refresh_token', None)
+        if refresh_token is None:
+            return {'require refresh token'}
+        data = decode_token(refresh_token)
+        refresh_jti = data['jti']
+        access_jti = get_jwt()['jti']
+        revoked_at = datetime.now(timezone.utc)
+        revoked_token = RevokedToken(access_jti=access_jti, refresh_jti=refresh_jti, created_at=revoked_at)
         db.session.add(revoked_token)
         db.session.commit()
-        return {'deleted': jti}
+
+        return jsonify(
+            access_jti=access_jti,
+            refresh_jti=refresh_jti
+            )
 
 
 def password_hashing(pwd):
@@ -296,15 +326,15 @@ def revoked_token_callback(_jwt_header, _jwt_payload):
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(_jwt_header, jwt_payload):
     jti = jwt_payload['jti']
-    token = db.session.query(RevokedToken.id).filter_by(jti=jti).scalar()
+    token = db.session.query(RevokedToken.id).filter_by(access_jti=jti).scalar()
     return token is not None
 
 
 api.add_resource(UserInfo, '/auth/signup')
-api.add_resource(UserOperation, '/user/<int:id>')
-api.add_resource(PasswordManager, '/user/change_password')
-api.add_resource(Login, '/login')
-api.add_resource(Identity, '/user_logged_in')
+api.add_resource(UserOperation, '/auth/login/user/<int:id>')
+api.add_resource(PasswordManager, '/auth/login/user/change_password')
+api.add_resource(Login, '/auth/login')
+api.add_resource(UserIdentity, '/auth/login/current_user')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
 api.add_resource(Logout, '/logout')
 
