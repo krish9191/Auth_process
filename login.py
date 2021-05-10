@@ -18,6 +18,8 @@ from datetime import timezone
 from dotenv import load_dotenv
 from functools import wraps
 import os
+import string
+import secrets
 
 app = Flask(__name__)
 api = Api(app)
@@ -140,7 +142,8 @@ def admin_required(func):      # decorator which checks claims(type of user) in 
 
 
 class UserOperation(Resource):
-    @jwt_required(fresh=True)
+
+    @admin_required
     def get(self, id):  # list user by a specified user_id
         user = User.query.get(id)
         if user is None:
@@ -153,8 +156,8 @@ class UserOperation(Resource):
         data_user['lastname'] = user.lastname
         return {'user': data_user}
 
-    @admin_required   # only 'admin' type user can perform this operation
-    def delete(self, id):  # delete user using user_id
+    @admin_required
+    def delete(self, id):   # delete user using user_id
         user = User.query.get(id)
         if user is None:
             return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
@@ -203,7 +206,7 @@ class PasswordManager(Resource):  # create new password verifying user email and
     @jwt_required(fresh=True)
     def put(self):
         data = request.get_json()
-        user = User.query.filter_by(email=data['email']).first()
+        user = db.session.query(User.username).filter_by(email=data['email']).first()
         if user is None:
             return {"error": '404 Not Found', 'message': 'please enter a valid email or password'}, 404
         old_password = data['old_password']
@@ -216,6 +219,28 @@ class PasswordManager(Resource):  # create new password verifying user email and
                 return {'password': data['new_password']}
 
         return {'error': '400 Bad Request', 'message': 'please enter a valid new password'}, 400
+
+
+def password_generator():     # generate 8 character password randomly with each upper, lower, digit, special character
+    upper = string.ascii_uppercase
+    lower = string.ascii_lowercase
+    digits = string.digits
+    special_char = ['@', '*', '#']
+    password = ''.join(
+        secrets.choice(upper) + secrets.choice(lower) + secrets.choice(digits) + secrets.choice(special_char)
+        for i in range(2))
+
+    return password
+
+
+class PasswordForgot(Resource):
+    def post(self):
+        email = request.json['email']
+        user = db.session.query(User.username).filter_by(email=email).first()
+        if not user:
+            return {'error': 'Not found, 404', 'message': 'email is not valid'}, 404
+        password = password_generator()
+        return {'password': password}
 
 
 class Login(Resource):  # user authentication, creation of access and refresh token
@@ -333,6 +358,7 @@ def check_if_token_revoked(_jwt_header, jwt_payload):
 api.add_resource(UserInfo, '/auth/signup')
 api.add_resource(UserOperation, '/auth/login/user/<int:id>')
 api.add_resource(PasswordManager, '/auth/login/user/change_password')
+api.add_resource(PasswordForgot, '/auth/forgot_password')
 api.add_resource(Login, '/auth/login')
 api.add_resource(UserIdentity, '/auth/login/current_user')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
