@@ -17,6 +17,8 @@ from datetime import timedelta
 from datetime import timezone
 from dotenv import load_dotenv
 from functools import wraps
+from flask_mail import Message, Mail
+import welcome
 import os
 import string
 import secrets
@@ -28,21 +30,33 @@ database_password = os.environ.get('PASSWORD')
 host = os.environ.get('HOST')
 database = os.environ.get('DATABASE')
 SECRET_KEY = os.environ.get("TOKEN_KEY")
+mail_username = os.environ.get('MAIL_USERNAME')
+mail_password = os.environ.get('MAIL_PASSWORD')
+mail_recipients = os.environ.get('MAIL_RECIPIENTS')
 app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://postgres:{database_password}@{host}/{database}"
 db = SQLAlchemy(app)
 app.config["JWT_SECRET_KEY"] = SECRET_KEY
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=3)
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USERNAME'] = mail_username
+app.config['MAIL_PASSWORD'] = mail_password
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+mail = Mail(app)
 
 
 class User(db.Model):
     user_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), nullable=False)
     password = db.Column(db.String(255), unique=True, nullable=False)
-    email = db.Column(db.String(150), unique=True, nullable=False)
     firstname = db.Column(db.String(50), nullable=False)
     lastname = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    email_status = db.Column(db.Boolean, default=False)
+    email_created_at = db.Column(db.DateTime(timezone=True))
     role = db.Column(db.String(255), default=None)
 
 
@@ -59,7 +73,7 @@ db.create_all()
 
 class UserInfo(Resource):
 
-    def get(self):   # List Users
+    def get(self):  # List Users
         users = User.query.all()
         results = []
         for user in users:
@@ -73,7 +87,7 @@ class UserInfo(Resource):
 
         return {'users': results}
 
-    def post(self):   # user registration
+    def post(self):  # user registration
         if request.json is None:
             return {'error': 'bad request', 'message': 'invalid input'}
         if request.json == {}:
@@ -128,7 +142,7 @@ class UserInfo(Resource):
         return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
 
 
-def admin_required(func):      # decorator which checks claims(type of user) in token payload
+def admin_required(func):  # decorator which checks claims(type of user) in token payload
     @wraps(func)
     def is_check_admin(*args, **kwargs):
         verify_jwt_in_request()
@@ -138,6 +152,7 @@ def admin_required(func):      # decorator which checks claims(type of user) in 
                 return func(*args, **kwargs)
         except KeyError:
             return {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '}, 403
+
     return is_check_admin
 
 
@@ -157,7 +172,7 @@ class UserOperation(Resource):
         return {'user': data_user}
 
     @admin_required
-    def delete(self, id):   # delete user using user_id
+    def delete(self, id):  # delete user using user_id
         user = User.query.get(id)
         if user is None:
             return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
@@ -166,7 +181,7 @@ class UserOperation(Resource):
         return {'deleted': user.user_id}
 
     @jwt_required(fresh=True)
-    def put(self, id):   # update user using user_id, can update single field or multiple field
+    def put(self, id):  # update user using user_id, can update single field or multiple field
         user = User.query.get(id)
         if user is None:
             return {"error": 'Not Found', 'message': 'please enter a valid id', 'field': 'id'}, 404
@@ -198,7 +213,7 @@ class UserOperation(Resource):
             email=user.email,
             username=user.username,
             password=user.password
-            )
+        )
         return user_data
 
 
@@ -221,7 +236,44 @@ class PasswordManager(Resource):  # create new password verifying user email and
         return {'error': '400 Bad Request', 'message': 'please enter a valid new password'}, 400
 
 
-def password_generator():     # generate 8 character password randomly with each upper, lower, digit, special character
+class EmailToken(Resource):
+    def post(self):
+        email = request.json['email']
+        user = User.query.filter_by(email=email).first_or_404()
+        email_verify_token = create_access_token(
+            identity=user.user_id, fresh=True, expires_delta=timedelta(hours=1),
+            additional_claims={'email': user.email})
+        msg = Message(subject="email verification", sender=mail_username, recipients=[email])
+        msg.body = 'click the link below to verify email'
+        msg.html = "<href>" f"{email_verify_token}" "</href>"
+        mail.send(msg)
+        return email_verify_token
+
+
+class EmailVerify(Resource):
+    def patch(self):
+        token = request.json['token']
+        data = decode_token(token)
+        email = data['email']
+        user = User.query.filter_by(email=email).first()
+        if user:
+            user.email_status = True
+            user.email_created_at = datetime.utcnow()
+            db.session.commit()
+        else:
+            return {'message': 'email not found, 404'}, 404
+        return jsonify(
+            username=user.username,
+            password=user.password,
+            firstname=user.firstname,
+            lastname=user.lastname,
+            email=user.email,
+            email_status=user.email_status,
+            email_created_at=user.email_created_at
+            )
+
+
+def password_generator():  # generate 8 character password randomly with each upper, lower, digit, special character
     upper = string.ascii_uppercase
     lower = string.ascii_lowercase
     digits = string.digits
@@ -240,6 +292,11 @@ class PasswordForgot(Resource):
         if not user:
             return {'error': 'Not found, 404', 'message': 'email is not valid'}, 404
         password = password_generator()
+        msg = Message(subject="Reset Password", sender=mail_username, recipients=[email])
+        msg.html = "<body><h1>"f"New password is {password}</h1>""</body>"
+        mail.send(msg)
+        user.password = password_hashing(password)
+        db.session.commit()
         return {'password': password}
 
 
@@ -305,7 +362,7 @@ class Logout(Resource):  # user logout
         return jsonify(
             access_jti=access_jti,
             refresh_jti=refresh_jti
-            )
+        )
 
 
 def password_hashing(pwd):
@@ -356,6 +413,8 @@ def check_if_token_revoked(_jwt_header, jwt_payload):
 
 
 api.add_resource(UserInfo, '/auth/signup')
+api.add_resource(EmailToken, '/auth/signup/email_token')
+api.add_resource(EmailVerify, '/auth/signup/verify_email')
 api.add_resource(UserOperation, '/auth/login/user/<int:id>')
 api.add_resource(PasswordManager, '/auth/login/user/change_password')
 api.add_resource(PasswordForgot, '/auth/forgot_password')
