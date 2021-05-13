@@ -12,6 +12,7 @@ from flask_jwt_extended import verify_jwt_in_request
 from flask_jwt_extended import decode_token
 from flask_jwt_extended import current_user
 from flask_jwt_extended import JWTManager
+from email_validator import validate_email, EmailNotValidError
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -59,6 +60,17 @@ class User(db.Model):
     email_created_at = db.Column(db.DateTime(timezone=True))
     role = db.Column(db.String(255), default=None)
 
+    def __init__(self, username, password, firstname, lastname, email, role):
+        self.username = username
+        self.password = password
+        self.email = email
+        self.firstname = firstname
+        self.lastname = lastname
+        self.role = role
+        self.email_status = False
+        self.email_created_at = datetime.utcnow()
+
+
 
 class RevokedToken(db.Model):
     __tablename__ = 'revoke_jwt'
@@ -91,43 +103,47 @@ class UserInfo(Resource):
         if request.json is None:
             return {'error': 'bad request', 'message': 'invalid input'}
         if request.json == {}:
-            return {'message': 'it is required to enter all the fields', 'error': 400}, 400
+            return {'message': 'it is required to enter all the fields', 'error': 'bad request, 404'}, 400
 
         first_name = request.json.get('firstname')
         if first_name is None or first_name == '':
-            return {'message': 'firstname is not valid', 'error': 400}, 400
+            return {'message': 'firstname is not valid', 'error': 'bad request, 404'}, 400
         else:
             firstname = first_name.strip()
 
         last_name = request.json.get('lastname')
         if last_name is None or last_name == '':
-            return {'message': 'lastname is not valid', 'error': 400}, 400
+            return {'message': 'lastname is not valid', 'error': 'bad request, 404'}, 400
         else:
             lastname = last_name.strip()
 
         email = request.json.get('email')
-        if email is None or email == '':
-            return {'message': 'email is not valid', 'error': 400}, 400
-        else:
-            u_email = email.strip()
+        # if email is None or email == '':
+        #     return {'message': 'email is not valid', 'error': 400}, 400
+        # else:
+        try:
+            valid = validate_email(email, allow_smtputf8=False)
+            email = valid.email
+        except EmailNotValidError as err:
+            return str(err)
 
         user_name = request.json.get('username')
         if user_name is None or user_name == '':
-            return {'message': 'username is not valid', 'error': 400}, 400
+            return {'message': 'username is not valid', 'error': 'bad request, 404'}, 400
         else:
             username = user_name.strip()
 
         role = request.json.get('role')
         if role is not None:
             if role != 'admin' and role != 'user':
-                return {'message': 'role is not valid', 'error': 400}, 400
+                return {'message': 'role is not valid', 'error': 'bad request, 404'}, 400
 
         password = request.json.get('password')
 
         if is_check_none_space_length(password) and is_check_char(password) and is_check_special_char(password):
             pwd = password_hashing(password)
-            user = User(username=username, password=pwd, email=u_email, firstname=firstname, lastname=lastname,
-                        role=role)
+            user = User(username=username, password=pwd, email=email, firstname=firstname, lastname=lastname, role=role)
+
             db.session.add(user)
             db.session.commit()
             return {'users': {
@@ -136,7 +152,8 @@ class UserInfo(Resource):
                 'firstname': first_name,
                 'lastname': last_name,
                 'email': email,
-                'role': role
+                'role': role,
+                'email_status': user.email_status
             }
             }
         return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
@@ -212,7 +229,10 @@ class UserOperation(Resource):
             lastname=user.lastname,
             email=user.email,
             username=user.username,
-            password=user.password
+            password=user.password,
+            role=user.role,
+            email_status=user.email_status,
+            email_created_at=user.email_created_at
         )
         return user_data
 
@@ -239,7 +259,9 @@ class PasswordManager(Resource):  # create new password verifying user email and
 class EmailToken(Resource):
     def post(self):
         email = request.json['email']
-        user = User.query.filter_by(email=email).first_or_404()
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            return {'error': 'not valid email, 404'}, 404
         email_verify_token = create_access_token(
             identity=user.user_id, fresh=True, expires_delta=timedelta(hours=1),
             additional_claims={'email': user.email})
@@ -254,11 +276,11 @@ class EmailVerify(Resource):
     def patch(self):
         token = request.json['token']
         data = decode_token(token)
+        print(data)
         email = data['email']
         user = User.query.filter_by(email=email).first()
         if user:
             user.email_status = True
-            user.email_created_at = datetime.utcnow()
             db.session.commit()
         else:
             return {'message': 'email not found, 404'}, 404
