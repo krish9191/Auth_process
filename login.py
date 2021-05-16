@@ -360,7 +360,7 @@ class RefreshAccessToken(Resource):  # refresh access token if refresh token is 
     @jwt_required(refresh=True)
     def post(self):
         jti = get_jwt()['jti']
-        if db.session.query(RevokedToken.id).filter_by(refresh_jti=jti):
+        if db.session.query(RevokedToken.id).filter_by(refresh_jti=jti).first():
             return {'msg': 'refresh token is expired'}, 404
         identity = get_jwt_identity()
         token = create_access_token(identity=identity, fresh=True)
