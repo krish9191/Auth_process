@@ -19,7 +19,6 @@ from datetime import timezone
 from dotenv import load_dotenv
 from functools import wraps
 from flask_mail import Message, Mail
-import welcome
 import os
 import string
 import secrets
@@ -71,7 +70,6 @@ class User(db.Model):
         self.email_created_at = datetime.utcnow()
 
 
-
 class RevokedToken(db.Model):
     __tablename__ = 'revoke_jwt'
     id = db.Column(db.Integer, primary_key=True)
@@ -95,6 +93,9 @@ class UserInfo(Resource):
             data_user['email'] = user.email
             data_user['firstname'] = user.firstname
             data_user['lastname'] = user.lastname
+            data_user['role'] = user.role
+            data_user['email_status'] = user.email_status
+
             results.append(data_user)
 
         return {'users': results}
@@ -253,10 +254,10 @@ class PasswordManager(Resource):  # create new password verifying user email and
                 db.session.commit()
                 return {'password': data['new_password']}
 
-        return {'error': '400 Bad Request', 'message': 'please enter a valid new password'}, 400
+        return {'error': '400 Bad Request', 'message': 'please enter a valid password'}, 400
 
 
-class EmailToken(Resource):
+class EmailToken(Resource):   # create access token, send to the user in a link to verify the user email
     def post(self):
         email = request.json['email']
         user = User.query.filter_by(email=email).first()
@@ -272,11 +273,10 @@ class EmailToken(Resource):
         return email_verify_token
 
 
-class EmailVerify(Resource):
+class EmailVerify(Resource):  # verify email from the payload of token
     def patch(self):
         token = request.json['token']
         data = decode_token(token)
-        print(data)
         email = data['email']
         user = User.query.filter_by(email=email).first()
         if user:
@@ -307,7 +307,7 @@ def password_generator():  # generate 8 character password randomly with each up
     return password
 
 
-class PasswordForgot(Resource):
+class PasswordForgot(Resource):  # create and add new password in the database
     def post(self):
         email = request.json['email']
         user = db.session.query(User.username).filter_by(email=email).first()
@@ -367,7 +367,7 @@ class RefreshAccessToken(Resource):  # refresh access token if refresh token is 
         return {'token': token}
 
 
-class Logout(Resource):  # user logout
+class Logout(Resource):  # logout user
     @jwt_required()
     def post(self):
         refresh_token = request.json.get('refresh_token', None)
