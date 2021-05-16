@@ -8,6 +8,7 @@ from resources.user_info_resource import UserInfo
 from resources.user_opt_resource import UserOperation
 from resources.refresh_access_token_resource import RefreshAccessToken
 from resources.email_verify_resource import EmailToken, EmailVerify
+from resources.change_password import PasswordForgot, PasswordChange
 from dotenv import load_dotenv
 import os
 
@@ -35,7 +36,7 @@ api.add_resource(Login, '/auth/login')
 api.add_resource(UserInfo, '/auth/signup')
 api.add_resource(UserIdentity, '/auth/login/current_user')
 api.add_resource(UserOperation, '/auth/login/user/<int:id>')
-api.add_resource(PasswordManager, '/auth/login/user/change_password')
+api.add_resource(PasswordChange, '/auth/login/user/change_password')
 api.add_resource(PasswordForgot, '/auth/forgot_password')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
 api.add_resource(EmailToken, '/auth/signup/email_token')
