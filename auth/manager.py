@@ -1,16 +1,12 @@
 from flask import request, jsonify
 from model.user import User
 from werkzeug.security import generate_password_hash, check_password_hash
-from extensions.extensions import db, jwt, mail
-from model.token_revoked import TokenRevoked
+from extensions.extensions import db, jwt
+from model.token_revoked import RevokedToken
 from flask_jwt_extended import create_access_token, create_refresh_token, current_user, get_jwt, get_jwt_identity
 from flask_jwt_extended import decode_token
 from password_validator import PasswordValidation
 from email_validator import validate_email, EmailNotValidError
-from flask_mail import Message
-from datetime import timedelta
-
-
 
 
 def add_user(firstname, lastname, username, email, role, password):
@@ -162,11 +158,10 @@ def user_login(username, password):
     return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
 
 
-
 def refresh_access_token():
     jti = get_jwt()['jti']
-    if db.session.query(TokenRevoked.id).filter_by(refresh_jti=jti):
-        return {'msg': 'refresh token is expired'}, 404
+    if db.session.query(RevokedToken.id).filter_by(refresh_jti=jti).first():
+        return {'msg': 'refresh token is expired'}, 403
     identity = get_jwt_identity()
     token = create_access_token(identity=identity, fresh=True)
     return {'token': token}
@@ -209,5 +204,5 @@ def revoked_token_callback(_jwt_header, _jwt_payload):
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(_jwt_header, jwt_payload):
     jti = jwt_payload['jti']
-    token = db.session.query(TokenRevoked.id).filter_by(access_jti=jti).scalar()
+    token = db.session.query(RevokedToken.id).filter_by(access_jti=jti).scalar()
     return token is not None
