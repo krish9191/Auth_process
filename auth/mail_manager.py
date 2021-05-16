@@ -20,11 +20,15 @@ def email_token(email):
     email_verify_token = create_access_token(
         identity=user.user_id, fresh=True, expires_delta=timedelta(hours=1),
         additional_claims={'email': user.email})
-    msg = Message(subject="email verification", sender=mail_username, recipients=[email])
-    msg.body = 'click the link below to verify email'
-    msg.html = "<href>" f"{email_verify_token}" "</href>"
-    mail.send(msg)
-    return email_verify_token
+    try:
+        msg = Message(subject="email verification", sender=mail_username, recipients=[email])
+        msg.body = 'click the link below to verify email'
+        msg.html = "<href>" f"{email_verify_token}" "</href>"
+        mail.send(msg)
+    except Exception:
+        print('message:- this are test email address, you can also use genuine email in a sender and recipients')
+    finally:
+        return email_verify_token
 
 
 def email_verify(token):
