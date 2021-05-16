@@ -19,7 +19,6 @@ from datetime import timezone
 from dotenv import load_dotenv
 from functools import wraps
 from flask_mail import Message, Mail
-import welcome
 import os
 import string
 import secrets
