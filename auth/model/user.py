@@ -51,5 +51,9 @@ class User(db.Model):
         return User.query.filter(User.email == email).first()
 
     @classmethod
+    def find_user_by_username(cls, username):
+        return User.query.filter(User.username == username).first()
+
+    @classmethod
     def find_all_user(cls):
         return User.query.all()

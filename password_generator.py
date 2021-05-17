@@ -2,7 +2,7 @@ import string
 import secrets
 
 
-def password_generator():  # generate 8 character password randomly with each upper, lower, digit, special character
+def generate_password():  # generate 8 character password randomly with each upper, lower, digit, special character
     upper = string.ascii_uppercase
     lower = string.ascii_lowercase
     digits = string.digits

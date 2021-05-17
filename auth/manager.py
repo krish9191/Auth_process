@@ -24,13 +24,13 @@ def add_user(firstname, lastname, username, email, password):
         lastname = last_name.strip()
 
     user_name = username
-    if user_name == '' or User.query.filter_by(username=user_name).first():
+    if user_name == '' or User.find_user_by_username(user_name):
         return {'message': 'username is not valid', 'error': 'bad request, 404'}, 400
     else:
         username = user_name.strip()
 
     email = email
-    if User.query.filter_by(email=email).first():
+    if User.find_user_by_email(email):
         return {'message': 'email is not valid', 'error': 'bad request, 404'}, 400
 
     try:
@@ -41,22 +41,23 @@ def add_user(firstname, lastname, username, email, password):
 
     password = password
 
-    if (PasswordValidation.is_check_none_space_length(password) and PasswordValidation.is_check_char(password)
-            and PasswordValidation.is_check_special_char(password)):
-        pwd = password_hashing(password)
-        user = User(username=username, password=pwd, email=email, firstname=firstname, lastname=lastname)
+    if not (PasswordValidation.is_check_none_space_length(password) and PasswordValidation.is_check_char(
+            password) and PasswordValidation.is_check_special_char(password)):
+        return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
 
-        db.session.add(user)
-        db.session.commit()
-        return {'users': {
-            'username': username,
-            'password': password,
-            'firstname': firstname,
-            'lastname': lastname,
-            'email': email,
-             }
-        }
-    return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
+    pwd = password_hashing(password)
+    user = User(username=username, password=pwd, email=email, firstname=firstname, lastname=lastname)
+
+    db.session.add(user)
+    db.session.commit()
+    return {'users': {
+        'username': username,
+        'password': password,
+        'firstname': firstname,
+        'lastname': lastname,
+        'email': email,
+    }
+    }
 
 
 def list_users():  # List Users
@@ -117,7 +118,9 @@ def update_user(id):
 
 
 def update_role(username, role):
-    user = User.query.filter_by(username=username)
+    user = User.find_user_by_username(username)
+    if not user:
+        return {"error": '404 Not Found', 'message': 'please enter a valid username'}, 404
     user.role = role
     db.session.commit()
     return user.write_to_dict()
@@ -133,19 +136,18 @@ def delete_user(id):
 
 
 def user_login(username, password):
-    user = User.query.filter_by(username=username).first()
+    user = User.find_user_by_username(username)
     if not user:
         return {'error': '404 Not Found', 'message': 'you need to enter valid Username and password'}, 404
-    if password_verify(user.password, password):
-        access_token, refresh_token = generate_token(user.username, user.role)
-        return jsonify(
-            username=user.username,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            role=user.role
-        )
-
-    return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
+    if not password_verify(user.password, password):
+        return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
+    access_token, refresh_token = generate_token(user.username, user.role)
+    return jsonify(
+        username=user.username,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        role=user.role
+    )
 
 
 def refresh_access_token():
@@ -183,7 +185,7 @@ def password_verify(password, pwd):
 @jwt.user_lookup_loader
 def user_lookup_callback(_jwt_header, jwt_data):
     identity = jwt_data["sub"]
-    return User.query.filter_by(username=identity).first()
+    return User.find_user_by_username(identity)
 
 
 @jwt.expired_token_loader

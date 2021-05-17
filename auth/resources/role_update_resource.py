@@ -5,7 +5,8 @@ from decorators import admin_required
 
 
 class RoleUpdate(Resource):
+    @classmethod
     @admin_required
-    def patch(self):
+    def patch(cls):
         data = request.get_json()
         return update_role(data['username'], data['role'])

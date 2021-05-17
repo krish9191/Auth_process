@@ -6,7 +6,7 @@ class PasswordValidation:
 
     @classmethod
     def is_check_char(cls, pwd):
-        str_func = [str.isalpha, str.islower, str.isupper]
+        str_func = [str.islower, str.isupper, str.isdigit]
         result = []
         for item in str_func:
             if any(item(char) for char in pwd):

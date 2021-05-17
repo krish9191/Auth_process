@@ -14,7 +14,7 @@ mail_recipients = os.environ.get('MAIL_RECIPIENTS')
 
 
 def email_token(email):
-    user = User.query.filter_by(email=email).first()
+    user = User.find_user_by_email(email)
     if not user:
         return {'error': 'not valid email, 404'}, 404
     email_verify_token = create_access_token(
@@ -34,7 +34,7 @@ def email_token(email):
 def email_verify(token):
     data = decode_token(token)
     email = data['email']
-    user = User.query.filter_by(email=email).first()
+    user = User.find_user_by_email(email)
     if user:
         user.email_status = True
         db.session.commit()
