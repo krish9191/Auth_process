@@ -65,6 +65,7 @@ def list_users():  # List Users
     results = []
     for user in users:
         data_user = dict()
+        data_user['id'] = user.user_id
         data_user['username'] = user.username
         data_user['password'] = user.password
         data_user['email'] = user.email
