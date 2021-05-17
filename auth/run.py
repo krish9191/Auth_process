@@ -3,12 +3,15 @@ from flask_restful import Api
 from extensions.extensions import db, jwt, mail
 from datetime import timedelta
 from resources.login_resource import Login
+from resources.list_all_users import UsersList
 from resources.user_identity_resource import UserIdentity
-from resources.user_info_resource import UserInfo
+from resources.user_signup_resource import UserInfo
 from resources.user_opt_resource import UserOperation
+from resources.role_update_resource import RoleUpdate
 from resources.refresh_access_token_resource import RefreshAccessToken
 from resources.email_verify_resource import EmailToken, EmailVerify
-from resources.change_password import PasswordForgot, PasswordChange
+from resources.new_password_resource import PasswordForgot, PasswordChange
+from resources.logout_resource import Logout
 from dotenv import load_dotenv
 import os
 
@@ -34,13 +37,16 @@ app.config['MAIL_USE_SSL'] = True
 
 api.add_resource(Login, '/auth/login')
 api.add_resource(UserInfo, '/auth/signup')
+api.add_resource(UsersList, '/auth/login/users')
 api.add_resource(UserIdentity, '/auth/login/current_user')
 api.add_resource(UserOperation, '/auth/login/user/<int:id>')
+api.add_resource(RoleUpdate, '/auth/login/user/role_update')
 api.add_resource(PasswordChange, '/auth/login/user/change_password')
 api.add_resource(PasswordForgot, '/auth/forgot_password')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
 api.add_resource(EmailToken, '/auth/signup/email_token')
 api.add_resource(EmailVerify, '/auth/signup/verify_email')
+api.add_resource(Logout, '/logout')
 
 if __name__ == '__main__':
     db.init_app(app)

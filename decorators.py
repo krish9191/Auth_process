@@ -7,9 +7,9 @@ def admin_required(func):  # decorator which checks claims(type of user) in toke
     @wraps(func)
     def is_check_admin(*args, **kwargs):
         verify_jwt_in_request()
-        claim = get_jwt()
+        role = get_jwt()
         try:
-            if claim['is_administrator']:
+            if role['admin']:
                 return func(*args, **kwargs)
         except KeyError:
             return {"error": '403, forbidden', 'message': 'you are not authorize to perform this operation '}, 403

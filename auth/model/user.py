@@ -11,17 +11,45 @@ class User(db.Model):
     email = db.Column(db.String(150), unique=True, nullable=False)
     email_status = db.Column(db.Boolean, default=False)
     email_created_at = db.Column(db.DateTime(timezone=True))
-    role = db.Column(db.String(255), default=None)
+    role = db.Column(db.String(255), default='user')
 
-    def __init__(self, username, password, firstname, lastname, email, role):
+    def __init__(self, username, password, firstname, lastname, email):
         self.username = username
         self.password = password
         self.email = email
         self.firstname = firstname
         self.lastname = lastname
-        self.role = role
+        self.role = 'user'
         self.email_status = False
         self.email_created_at = datetime.utcnow()
 
+    def to_str_date(self):
+        normal_date = self.email_created_at
+        str_date = normal_date.strftime("%Y/%m/%d,%H:%M:%S")
+        return str_date
 
+    def write_to_dict(self):
+        return {
+            'id': self.user_id,
+            'user': {
+                'username': self.username,
+                'email': self.email,
+                'firstname': self.firstname,
+                'lastname': self.lastname,
+                'role': self.role,
+                'email_status': self.email_status,
+                'email_created_at': self.to_str_date()
+            }
+        }
 
+    @classmethod
+    def find_user_by_id(cls, id):
+        return User.query.filter(User.user_id == id).first()
+
+    @classmethod
+    def find_user_by_email(cls, email):
+        return User.query.filter(User.email == email).first()
+
+    @classmethod
+    def find_all_user(cls):
+        return User.query.all()

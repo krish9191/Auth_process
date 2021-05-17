@@ -7,9 +7,10 @@ from flask_jwt_extended import create_access_token, create_refresh_token, curren
 from flask_jwt_extended import decode_token
 from password_validator import PasswordValidation
 from email_validator import validate_email, EmailNotValidError
+from datetime import datetime, timezone
 
 
-def add_user(firstname, lastname, username, email, role, password):
+def add_user(firstname, lastname, username, email, password):
     first_name = firstname
     if first_name == '':
         return {'message': 'firstname is not valid', 'error': 'bad request, 404'}, 400
@@ -30,7 +31,7 @@ def add_user(firstname, lastname, username, email, role, password):
 
     email = email
     if User.query.filter_by(email=email).first():
-        return {'message': 'email is not valid', 'error': 400}, 400
+        return {'message': 'email is not valid', 'error': 'bad request, 404'}, 400
 
     try:
         valid = validate_email(email, allow_smtputf8=False)
@@ -38,16 +39,12 @@ def add_user(firstname, lastname, username, email, role, password):
     except EmailNotValidError as err:
         return str(err)
 
-    role = role
-    if role != 'admin' and role != 'user':
-        return {'message': 'role is not valid', 'error': 'bad request, 404'}, 400
-
     password = password
 
     if (PasswordValidation.is_check_none_space_length(password) and PasswordValidation.is_check_char(password)
             and PasswordValidation.is_check_special_char(password)):
         pwd = password_hashing(password)
-        user = User(username=username, password=pwd, email=email, firstname=firstname, lastname=lastname, role=role)
+        user = User(username=username, password=pwd, email=email, firstname=firstname, lastname=lastname)
 
         db.session.add(user)
         db.session.commit()
@@ -57,15 +54,13 @@ def add_user(firstname, lastname, username, email, role, password):
             'firstname': firstname,
             'lastname': lastname,
             'email': email,
-            'role': role,
-            'email_status': user.email_status
-        }
+             }
         }
     return {'error': '400 Bad Request', 'message': 'Enter a valid Password'}, 400
 
 
 def list_users():  # List Users
-    users = User.query.all()
+    users = User.find_all_user()
     results = []
     for user in users:
         data_user = dict()
@@ -76,35 +71,26 @@ def list_users():  # List Users
         data_user['lastname'] = user.lastname
         data_user['role'] = user.role
         data_user['email_status'] = user.email_status
-
+        data_user['email_created_at'] = user.to_str_date()
         results.append(data_user)
 
     return {'users': results}
 
 
 def list_user(id):
-    user = User.query.get(id)
+    user = User.find_user_by_id(id)
     if user is None:
         return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
-    user_data = dict()
-    user_data['username'] = user.username
-    user_data['password'] = user.password
-    user_data['email'] = user.email
-    user_data['firstname'] = user.firstname
-    user_data['lastname'] = user.lastname
-    user_data['role'] = user.role
-    user_data['email_status'] = user.email_status
-    user_data['email_created_at'] = user.email_created_at
-    return {'user': user_data}
+    return user.write_to_dict()
 
 
 def update_user(id):
-    user = User.query.get(id)
+    user = User.find_user_by_id(id)
     user_data = {}
     if user is None:
         return {"error": 'Not Found', 'message': 'please enter a valid id'}, 404
     if request.json == {}:
-        return {'message': 'enter valid field to update'}, 200
+        return {'message': 'enter valid field to update'}, 400
 
     username = request.json.get('username', None)
     if username is not None:
@@ -124,17 +110,21 @@ def update_user(id):
 
     db.session.commit()
     user_data['username'] = user.username
-    user_data['password'] = user.password
     user_data['email'] = user.email
     user_data['firstname'] = user.firstname
     user_data['lastname'] = user.lastname
-    user_data['role'] = user.role
-    user_data['email_status'] = user.email_status
     return user_data
 
 
+def update_role(username, role):
+    user = User.query.filter_by(username=username)
+    user.role = role
+    db.session.commit()
+    return user.write_to_dict()
+
+
 def delete_user(id):
-    user = User.query.get(id)
+    user = User.find_user_by_id(id)
     if user is None:
         return {"error": '404 Not Found', 'message': 'please enter a valid id'}, 404
     db.session.delete(user)
@@ -145,7 +135,7 @@ def delete_user(id):
 def user_login(username, password):
     user = User.query.filter_by(username=username).first()
     if not user:
-        return {'error': '400 Bad Request', 'message': 'you need to enter valid Username and password'}, 400
+        return {'error': '404 Not Found', 'message': 'you need to enter valid Username and password'}, 404
     if password_verify(user.password, password):
         access_token, refresh_token = generate_token(user.username, user.role)
         return jsonify(
@@ -206,3 +196,21 @@ def check_if_token_revoked(_jwt_header, jwt_payload):
     jti = jwt_payload['jti']
     token = db.session.query(RevokedToken.id).filter_by(access_jti=jti).scalar()
     return token is not None
+
+
+def user_logout():
+    refresh_token = request.json.get('refresh_token', None)
+    if refresh_token is None:
+        return {'require refresh token'}
+    data = decode_token(refresh_token)
+    refresh_jti = data['jti']
+    access_jti = get_jwt()['jti']
+    revoked_at = datetime.now(timezone.utc)
+    revoked_token = RevokedToken(access_jti=access_jti, refresh_jti=refresh_jti, created_at=revoked_at)
+    db.session.add(revoked_token)
+    db.session.commit()
+
+    return jsonify(
+        access_jti=access_jti,
+        refresh_jti=refresh_jti
+    )
