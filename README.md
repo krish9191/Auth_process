@@ -1,2 +1,2 @@
-# loginapi
-## Description:do the user registration and verify the user login maintaining all the validation and encryption need for the login data.
+## Authentication-Model
+#### Description:- It is an authentication model. It authenticates and authorize access and limit the resources to the users. It has almost all the features as today's authentication model like password(hashed) and email verification, jwt token based authorization, refresh token, password generator, password and email validation and logout process.Moreover, it does the CRUD operation using ORM.
