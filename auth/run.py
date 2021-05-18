@@ -35,6 +35,11 @@ app.config['MAIL_USE_TLS'] = False
 app.config['MAIL_USE_SSL'] = True
 
 
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
+
 api.add_resource(Login, '/auth/login')
 api.add_resource(UserInfo, '/auth/signup')
 api.add_resource(UsersList, '/auth/login/users')
