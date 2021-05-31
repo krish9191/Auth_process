@@ -1,8 +1,8 @@
 from flask import request, jsonify
-from model.user import User
+from auth.model.user import User
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions.extensions import db, jwt
-from model.token_revoked import RevokedToken
+from auth.model.token_revoked import RevokedToken
 from flask_jwt_extended import create_access_token, create_refresh_token, current_user, get_jwt, get_jwt_identity
 from flask_jwt_extended import decode_token
 from password_validator import PasswordValidation
@@ -11,35 +11,26 @@ from datetime import datetime, timezone
 
 
 def add_user(firstname, lastname, username, email, password):
-    first_name = firstname
-    if first_name == '':
+    if firstname == '':
         return {'message': 'firstname is not valid', 'error': 'bad request, 404'}, 400
     else:
-        firstname = first_name.strip()
+        firstname = firstname.strip()
 
-    last_name = lastname
-    if last_name == '':
+    if lastname == '':
         return {'message': 'lastname is not valid', 'error': 'bad request, 404'}, 400
     else:
-        lastname = last_name.strip()
+        lastname = lastname.strip()
 
-    user_name = username
-    if user_name == '' or User.find_user_by_username(user_name):
+    if username == '':
         return {'message': 'username is not valid', 'error': 'bad request, 404'}, 400
     else:
-        username = user_name.strip()
-
-    email = email
-    if User.find_user_by_email(email):
-        return {'message': 'email is not valid', 'error': 'bad request, 404'}, 400
+        username = username.strip()
 
     try:
         valid = validate_email(email, allow_smtputf8=False)
         email = valid.email
     except EmailNotValidError as err:
         return str(err)
-
-    password = password
 
     if not (PasswordValidation.is_check_none_space_length(password) and PasswordValidation.is_check_char(
             password) and PasswordValidation.is_check_special_char(password)):

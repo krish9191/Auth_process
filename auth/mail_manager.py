@@ -1,19 +1,13 @@
-from model.user import User
+import os
+from auth.model.user import User
 from flask_mail import Message
 from extensions.extensions import mail, db
 from flask_jwt_extended import create_access_token, decode_token
 from datetime import timedelta
-from dotenv import load_dotenv
-import os
 from flask import jsonify
 
-load_dotenv('.env')
-mail_username = os.environ.get('MAIL_USERNAME')
-mail_password = os.environ.get('MAIL_PASSWORD')
-mail_recipients = os.environ.get('MAIL_RECIPIENTS')
 
-
-def email_token(email):
+def generate_email_token(email):
     user = User.find_user_by_email(email)
     if not user:
         return {'error': 'not valid email, 404'}, 404
@@ -21,7 +15,8 @@ def email_token(email):
         identity=user.user_id, fresh=True, expires_delta=timedelta(hours=1),
         additional_claims={'email': user.email})
     try:
-        msg = Message(subject="email verification", sender=mail_username, recipients=[email])
+        msg = Message(subject="email verification", sender=os.environ.get('MAIL_USERNAME'),
+                      recipients=[os.environ.get('MAIL_RECIPIENTS')])
         msg.body = 'click the link below to verify email'
         msg.html = "<href>" f"{email_verify_token}" "</href>"
         mail.send(msg)
