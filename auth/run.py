@@ -42,18 +42,19 @@ def create_tables():
 
 api.add_resource(Login, '/auth/login')
 api.add_resource(UserInfo, '/auth/signup')
-api.add_resource(UsersList, '/auth/login/users')
-api.add_resource(UserIdentity, '/auth/login/current_user')
-api.add_resource(UserOperation, '/auth/login/user/<int:id>')
-api.add_resource(RoleUpdate, '/auth/login/user/role_update')
-api.add_resource(PasswordChange, '/auth/login/user/change_password')
-api.add_resource(PasswordForgot, '/auth/forgot_password')
+api.add_resource(UsersList, '/users')
+api.add_resource(UserIdentity, '/current_user')
+api.add_resource(UserOperation, '/user/<int:id>')
+api.add_resource(RoleUpdate, '/user/role_update')
+api.add_resource(PasswordChange, 'user/change_password')
+api.add_resource(PasswordForgot, '/forgot_password')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
-api.add_resource(EmailToken, '/auth/signup/email_token')
-api.add_resource(EmailVerify, '/auth/signup/verify_email')
+api.add_resource(EmailToken, '/email_token')
+api.add_resource(EmailVerify, '/verify_email')
 api.add_resource(Logout, '/logout')
 
 if __name__ == '__main__':
+
     db.init_app(app)
     jwt.init_app(app)
     mail.init_app(app)
