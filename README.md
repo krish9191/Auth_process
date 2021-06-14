@@ -1,6 +1,6 @@
 ## Auth_Process
-#### Description:- Authentication module 
-### Features
+### Descriptions:
+#### Features
 - User Sign Up 
 - User authentication
 - Token based authorization
@@ -9,8 +9,8 @@
 - Forgot password
 - CRUD operations
 - Logout
-### Functionalities
-- authenticates users by their username and mapping password hash 
+#### Functionalities
+- authenticate users by their username and password hash 
 - create and verify access and refresh tokens in every required operations
 - custom decorator to maintain access limitations to the users
 - custom password generator
