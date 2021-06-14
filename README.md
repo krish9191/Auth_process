@@ -1,5 +1,5 @@
 ## Authentication
-#### Description:- authenticates users, role based authorization to the users. It has the features like  email verification, jwt token based authorization, refresh token, password generator, password and email validation and logout process.Moreover, it does the CRUD operation using ORM .
+#### Description:- authenticates users, role based authorization to the users. It has the features like  email verification, token based authorization, refresh token, password generator, password and email validation and logout process.Moreover, it does the CRUD operation using ORM .
 
 
 
