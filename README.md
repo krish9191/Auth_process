@@ -25,7 +25,7 @@
 
 ### To SetUp and Start
 ```python
-pip install -r requirement.txt
+pip install -r requirements.txt
 python run.py
 ```
 
