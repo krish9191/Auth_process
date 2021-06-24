@@ -4,21 +4,27 @@ from decorators import admin_required
 from auth.manager import list_user
 from auth.manager import delete_user
 from auth.manager import update_user
+from exception import MyException
 
 
 class UserOperation(Resource):
 
     @classmethod
     @admin_required
-    def get(cls, id):  # list user by a specified user_id
+    def get(cls, id):
         return list_user(id)
 
     @classmethod
     @admin_required
-    def delete(cls, id):  # delete user using user_id
+    def delete(cls, id):
         return delete_user(id)
 
+
+class UserUpdate(Resource):
     @classmethod
     @jwt_required()
-    def put(cls, id):  # update user using user_id, can update single field or multiple field
-        return update_user(id)
+    def put(cls):
+        try:
+            return update_user()
+        except Exception as err:
+            raise MyException('this username is taken try next', status_code=406)

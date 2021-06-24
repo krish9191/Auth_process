@@ -1,12 +1,15 @@
 from flask import Flask
 from flask_restful import Api
+from auth.resources.email_update_resource import EmailUpdate
+from auth.resources.update_email_token import EmailUpdateToken
+from exception import MyException
 from extensions.extensions import db, jwt, mail
 from datetime import timedelta
 from auth.resources.login_resource import Login
 from auth.resources.list_all_users import UsersList
 from auth.resources.user_identity_resource import UserIdentity
 from auth.resources.user_signup_resource import UserInfo
-from auth.resources.user_opt_resource import UserOperation
+from auth.resources.user_opt_resource import UserOperation, UserUpdate
 from auth.resources.role_update_resource import RoleUpdate
 from auth.resources.refresh_access_token_resource import RefreshAccessToken
 from auth.resources.email_verify_resource import EmailToken, EmailVerify
@@ -39,21 +42,29 @@ def create_tables():
     db.create_all()
 
 
+@app.errorhandler(MyException)
+def handle_error(err):
+    return err.error_to_dict(), err.status_code
+
+
 api.add_resource(Login, '/auth/login')
-api.add_resource(UserInfo, '/auth/signup')
+api.add_resource(UserInfo, '/user/signup')
 api.add_resource(UsersList, '/users')
 api.add_resource(UserIdentity, '/current_user')
 api.add_resource(UserOperation, '/user/<int:id>')
+api.add_resource(UserUpdate, '/user/update')
 api.add_resource(RoleUpdate, '/user/role_update')
 api.add_resource(PasswordChange, '/user/change_password')
 api.add_resource(PasswordForgot, '/forgot_password')
 api.add_resource(RefreshAccessToken, '/refresh_access_token')
 api.add_resource(EmailToken, '/email_token')
 api.add_resource(EmailVerify, '/verify_email')
+api.add_resource(EmailUpdateToken, '/email/update_token')
+api.add_resource(EmailUpdate, '/email/update')
+
 api.add_resource(Logout, '/logout')
 
 if __name__ == '__main__':
-
     db.init_app(app)
     jwt.init_app(app)
     mail.init_app(app)
