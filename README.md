@@ -4,7 +4,7 @@
 - User Sign Up 
 - User authentication
 - Token based authorization
-- Role based access
+- Role based access control
 - Email verification
 - Forgot password
 - CRUD operations
