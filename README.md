@@ -12,7 +12,7 @@
 #### Functionalities
 - authenticate users by their username and password hash 
 - create and verify access and refresh tokens in every required operations
-- custom decorator to maintain access limitations to the users
+- custom decorator to maintain access control to the users
 - custom password generator
 - custom password validation
 - pasword hashing
